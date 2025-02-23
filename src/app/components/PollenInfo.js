@@ -1,13 +1,8 @@
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
-import axios from 'axios';
-import {AlertTriangle, ThumbsUp, Flower2} from 'lucide-react';
-import getUserLocation from "../scripts/get_location.js";
-import {Alert, AlertTitle, Typography} from '@mui/material';
-import {Card, CardContent, CardHeader} from '@mui/material';
+import { Wind, Clock, Flower2, AlertCircle, ThumbsUp } from 'lucide-react';
 
-const fetcher = url => axios.get(url).then(res => res.data);
-const pollenApiKey = process.env.NEXT_PUBLIC_GOOGLE_POLLEN_API_KEY;
+const fetcher = url => fetch(url).then(res => res.json());
 
 export default function PollenInfo() {
     const [location, setLocation] = useState(null);
@@ -15,88 +10,167 @@ export default function PollenInfo() {
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        console.log("Fetching user location...");
-        getUserLocation()
-            .then(loc => {
-                console.log("Location fetched:", loc);
-                setLocation(loc);
-                setIsLoading(false);
-            })
-            .catch(err => {
-                console.error("Error getting location:", err);
-                setError("Failed to get location: " + err.message);
-                setIsLoading(false);
-            });
+        setLocation({ latitude: 37.7749, longitude: -122.4194 });
+        setIsLoading(false);
     }, []);
 
-    const url = location
-        ? `https://pollen.googleapis.com/v1/forecast:lookup?key=${pollenApiKey}&location.latitude=${location.latitude}&location.longitude=${location.longitude}&days=1`
-        : null;
+    // Enhanced sample data
+    const sampleData = {
+        dailyInfo: [{
+            date: { year: 2024, month: 2, day: 23 },
+            pollenTypeInfo: [
+                {
+                    displayName: "Tree",
+                    indexInfo: {
+                        value: 4,
+                        category: "Moderate",
+                        indexDescription: "Moderate tree pollen levels may cause symptoms for sensitive individuals"
+                    },
+                    triggers: ["Birch", "Oak", "Pine"]
+                },
+                {
+                    displayName: "Grass",
+                    indexInfo: {
+                        value: 2,
+                        category: "Low",
+                        indexDescription: "Low grass pollen levels unlikely to affect most individuals"
+                    },
+                    triggers: ["Timothy", "Bermuda"]
+                },
+                {
+                    displayName: "Weed",
+                    indexInfo: {
+                        value: 1,
+                        category: "Low",
+                        indexDescription: "Very low weed pollen levels present"
+                    },
+                    triggers: ["Ragweed", "Nettle"]
+                }
+            ],
+            riskFactors: {
+                humidity: 65,
+                windSpeed: 8,
+                temperature: 22
+            }
+        }]
+    };
 
-    const {data, error: swrError} = useSWR(url, fetcher);
+    const { data = sampleData } = useSWR(location ? '/api/pollen' : null, null);
+    const pollenInfo = data?.dailyInfo?.[0];
 
-    if (isLoading) return <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-blue-500"></div>
-    </div>;
-    if (!data) return <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-blue-500"></div>
-    </div>;
+    const getPollenColor = (value) => {
+        if (value <= 2) return 'bg-gradient-to-r from-green-400 to-green-300';
+        if (value <= 4) return 'bg-gradient-to-r from-yellow-400 to-yellow-300';
+        return 'bg-gradient-to-r from-red-400 to-red-300';
+    };
 
-    const pollenInfo = data.dailyInfo[0];
-    const maxPollenLevel = Math.max(...pollenInfo.pollenTypeInfo.map(type => type.indexInfo.value));
-    const overallStatus = maxPollenLevel <= 2 ? "Low" : maxPollenLevel <= 4 ? "Moderate" : "High";
+    const getRiskLevel = (value) => {
+        if (value <= 2) return { text: 'Low Risk', icon: ThumbsUp, color: 'text-green-500' };
+        if (value <= 4) return { text: 'Moderate Risk', icon: AlertCircle, color: 'text-yellow-500' };
+        return { text: 'High Risk', icon: AlertCircle, color: 'text-red-500' };
+    };
+
+    const maxPollenValue = Math.max(...pollenInfo.pollenTypeInfo.map(p => p.indexInfo.value));
+    const riskInfo = getRiskLevel(maxPollenValue);
+    const RiskIcon = riskInfo.icon;
+
+    if (error) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <div className="p-6 text-center bg-red-50 rounded-lg shadow-sm">
+                    <p className="text-red-600">Unable to load pollen data</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+        );
+    }
 
     return (
-        <div className="container mx-auto p-4">
-            <h1 className="text-3xl font-bold mb-6 text-center">Pollen Patrol</h1>
-
-            <Card className="mb-6">
-                <CardHeader>
-                    <Typography variant="h4">Pollen Forecast</Typography>
-                </CardHeader>
-                <CardContent>
-                    {overallStatus === "Low" && <ThumbsUp className="text-green-500"/>}
-                    {overallStatus === "Moderate" && <AlertTriangle className="text-yellow-500"/>}
-                    {overallStatus === "High" && <AlertTriangle className="text-red-500"/>}
-                    <p className="text-2xl font-bold">Pollen is {overallStatus} right now</p>
-                    <p className="text-gray-600">Date: {`${pollenInfo.date.year}-${pollenInfo.date.month}-${pollenInfo.date.day}`}</p>
-                    <p className="text-gray-600">Location: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}</p>
-                </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pollenInfo.pollenTypeInfo.map((type, index) => (
-                    <Card key={index} className="overflow-hidden">
-                        <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
-                        </CardHeader>
-                        <CardContent>
-                            <Flower2 className="mr-2"/>
-                            <p className="text-xl font-bold mb-2">{type.displayName} Status: {type.indexInfo.category}</p>
-                            <p className="mb-2">Level: {type.indexInfo.value} / 5</p>
-                            <p className="text-sm text-gray-600 mb-2">{type.indexInfo.indexDescription}</p>
-                            <Alert
-                                variant={type.indexInfo.value <= 2 ? "default" : type.indexInfo.value <= 4 ? "warning" : "destructive"}>
-                                <p>{type.healthRecommendations[0]}</p>
-                            </Alert>
-                        </CardContent>
-                    </Card>
-                ))}
+        <div className="max-w-lg mx-auto p-6 space-y-6">
+            <div className="text-center">
+                <h1 className="text-4xl font-light mb-2">Pollen Report</h1>
+                <div className="text-sm text-gray-500">
+                    <Clock className="inline-block w-4 h-4 mr-1" />
+                    {new Date().toLocaleDateString(undefined, {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    })}
+                </div>
             </div>
 
-            <h2 className="text-2xl font-bold mt-8 mb-4">Plants in Your Area</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pollenInfo.plantInfo.filter(plant => plant.plantDescription).map((plant, index) => (
-                    <Card key={index} className="overflow-hidden">
-                        <img src={plant.plantDescription.picture} alt={plant.displayName}
-                             className="w-full h-48 object-cover"/>
-                        <CardContent className="p-4">
-                            <h3 className="text-xl font-bold mb-2">{plant.displayName}</h3>
-                            <p className="text-sm text-gray-600 mb-1">Type: {plant.plantDescription.type}</p>
-                            <p className="text-sm text-gray-600 mb-1">Season: {plant.plantDescription.season}</p>
-                            <p className="text-sm text-gray-600">{plant.inSeason ? 'Currently in Season' : 'Out of Season'}</p>
-                        </CardContent>
-                    </Card>
-                ))}
+            <div className="overflow-hidden rounded-xl bg-white/30 backdrop-blur-xl shadow-lg">
+                {/* Main Stats */}
+                <div className="p-6 space-y-8">
+                    <div className="text-center space-y-2">
+                        <Wind className="w-12 h-12 mx-auto text-blue-500" />
+                        <div className="text-6xl font-extralight">{maxPollenValue}</div>
+                        <div className="flex items-center justify-center gap-2">
+                            <RiskIcon className={`w-5 h-5 ${riskInfo.color}`} />
+                            <span className={`font-medium ${riskInfo.color}`}>{riskInfo.text}</span>
+                        </div>
+                    </div>
+
+                    {/* Environmental Factors */}
+                    <div className="grid grid-cols-3 gap-4 text-center py-4 border-y border-gray-100">
+                        <div>
+                            <div className="text-gray-500 text-sm">Humidity</div>
+                            <div className="text-lg font-medium">{pollenInfo.riskFactors.humidity}%</div>
+                        </div>
+                        <div>
+                            <div className="text-gray-500 text-sm">Wind</div>
+                            <div className="text-lg font-medium">{pollenInfo.riskFactors.windSpeed} mph</div>
+                        </div>
+                        <div>
+                            <div className="text-gray-500 text-sm">Temperature</div>
+                            <div className="text-lg font-medium">{pollenInfo.riskFactors.temperature}°C</div>
+                        </div>
+                    </div>
+
+                    {/* Detailed Pollen Types */}
+                    <div className="space-y-6">
+                        {pollenInfo.pollenTypeInfo.map((type, index) => (
+                            <div key={index} className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <Flower2 className="w-5 h-5 text-blue-500" />
+                                        <span className="font-medium">{type.displayName}</span>
+                                    </div>
+                                    <span className="text-sm text-gray-600">{type.indexInfo.category}</span>
+                                </div>
+                                <div className="h-2 rounded-full bg-gray-100">
+                                    <div
+                                        className={`h-full rounded-full ${getPollenColor(type.indexInfo.value)}`}
+                                        style={{ width: `${(type.indexInfo.value / 5) * 100}%` }}
+                                    />
+                                </div>
+                                <div className="text-sm text-gray-600">{type.indexInfo.indexDescription}</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {type.triggers.map((trigger, i) => (
+                                        <span key={i} className="px-2 py-1 bg-gray-100 rounded-full text-xs text-gray-600">
+                      {trigger}
+                    </span>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="border-t border-gray-100 p-4">
+                    <div className="text-center text-sm text-gray-500">
+                        Updated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                </div>
             </div>
         </div>
     );
